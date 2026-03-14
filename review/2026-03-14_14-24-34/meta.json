@@ -1,0 +1,98 @@
+{
+  "timestamp": "2026-03-14T14:28:12.270157",
+  "files": [
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/components/ControlsInfo.tsx",
+      "change_type": "Review",
+      "file_extension": "tsx"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/components/TetrisGame.tsx",
+      "change_type": "Review",
+      "file_extension": "tsx"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/tetris/gameEngine.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/tetris/types.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/prompts/prompts.md",
+      "change_type": "Review",
+      "file_extension": "md"
+    }
+  ],
+  "total_elapsed_seconds": 217.48,
+  "agents": [
+    {
+      "name": "database",
+      "status": "success",
+      "elapsed_seconds": 8.56
+    },
+    {
+      "name": "api_contract",
+      "status": "success",
+      "elapsed_seconds": 22.77
+    },
+    {
+      "name": "security",
+      "status": "success",
+      "elapsed_seconds": 39.11
+    },
+    {
+      "name": "dependency",
+      "status": "success",
+      "elapsed_seconds": 48.3
+    },
+    {
+      "name": "architecture",
+      "status": "success",
+      "elapsed_seconds": 50.16
+    },
+    {
+      "name": "scope",
+      "status": "success",
+      "elapsed_seconds": 55.82
+    },
+    {
+      "name": "maintainability",
+      "status": "success",
+      "elapsed_seconds": 56.0
+    },
+    {
+      "name": "concurrency",
+      "status": "success",
+      "elapsed_seconds": 57.45
+    },
+    {
+      "name": "documentation",
+      "status": "success",
+      "elapsed_seconds": 58.61
+    },
+    {
+      "name": "performance",
+      "status": "success",
+      "elapsed_seconds": 60.06
+    },
+    {
+      "name": "requirement",
+      "status": "success",
+      "elapsed_seconds": 65.03
+    },
+    {
+      "name": "side_effect",
+      "status": "success",
+      "elapsed_seconds": 82.31
+    },
+    {
+      "name": "testing",
+      "status": "success",
+      "elapsed_seconds": 97.45
+    }
+  ]
+}
