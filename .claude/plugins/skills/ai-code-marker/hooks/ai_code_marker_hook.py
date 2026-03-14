@@ -1,0 +1,606 @@
+#!/usr/bin/env python3
+"""
+AI Code Marker Hook for Claude Code
+Automatically wraps AI-generated or modified code blocks with marker comments.
+Runs as a PostToolUse hook after Write/Edit tool executions.
+"""
+
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import datetime
+
+DEBUG_LOG_FILE = "/tmp/ai-code-marker-log.txt"
+
+
+def debug_log(message):
+    """Append debug message to log file with timestamp."""
+    try:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        with open(DEBUG_LOG_FILE, "a") as f:
+            f.write(f"[{timestamp}] {message}\n")
+    except Exception:
+        pass
+
+
+# Comment style definitions: (prefix, suffix)
+# suffix is empty string for single-line comment styles
+COMMENT_STYLES = {
+    # Single-line // style
+    "js": ("//", ""),
+    "ts": ("//", ""),
+    "jsx": ("//", ""),
+    "tsx": ("//", ""),
+    "mjs": ("//", ""),
+    "cjs": ("//", ""),
+    "java": ("//", ""),
+    "c": ("//", ""),
+    "h": ("//", ""),
+    "cpp": ("//", ""),
+    "hpp": ("//", ""),
+    "cc": ("//", ""),
+    "cxx": ("//", ""),
+    "go": ("//", ""),
+    "rs": ("//", ""),
+    "swift": ("//", ""),
+    "kt": ("//", ""),
+    "kts": ("//", ""),
+    "cs": ("//", ""),
+    "php": ("//", ""),
+    "dart": ("//", ""),
+    "scala": ("//", ""),
+    "groovy": ("//", ""),
+    "v": ("//", ""),
+    "zig": ("//", ""),
+    "proto": ("//", ""),
+    # Single-line # style
+    "py": ("#", ""),
+    "rb": ("#", ""),
+    "sh": ("#", ""),
+    "bash": ("#", ""),
+    "zsh": ("#", ""),
+    "fish": ("#", ""),
+    "yaml": ("#", ""),
+    "yml": ("#", ""),
+    "toml": ("#", ""),
+    "ini": ("#", ""),
+    "conf": ("#", ""),
+    "cfg": ("#", ""),
+    "r": ("#", ""),
+    "pl": ("#", ""),
+    "pm": ("#", ""),
+    "tcl": ("#", ""),
+    "dockerfile": ("#", ""),
+    "makefile": ("#", ""),
+    "mk": ("#", ""),
+    "cmake": ("#", ""),
+    "tf": ("#", ""),
+    "tfvars": ("#", ""),
+    "ex": ("#", ""),
+    "exs": ("#", ""),
+    "cr": ("#", ""),
+    "nim": ("#", ""),
+    "jl": ("#", ""),
+    # Block comment <!-- --> style
+    "html": ("<!--", "-->"),
+    "htm": ("<!--", "-->"),
+    "xml": ("<!--", "-->"),
+    "svg": ("<!--", "-->"),
+    "vue": ("<!--", "-->"),
+    "svelte": ("<!--", "-->"),
+    "md": ("<!--", "-->"),
+    "mdx": ("<!--", "-->"),
+    # Block comment /* */ style
+    "css": ("/*", "*/"),
+    "scss": ("/*", "*/"),
+    "sass": ("/*", "*/"),
+    "less": ("/*", "*/"),
+    "styl": ("/*", "*/"),
+    # Single-line -- style
+    "sql": ("--", ""),
+    "lua": ("--", ""),
+    "hs": ("--", ""),
+    "elm": ("--", ""),
+    "ada": ("--", ""),
+    "vhdl": ("--", ""),
+}
+
+# Special filenames (without extension) mapped to comment styles
+SPECIAL_FILENAMES = {
+    "Dockerfile": ("#", ""),
+    "Makefile": ("#", ""),
+    "Gemfile": ("#", ""),
+    "Rakefile": ("#", ""),
+    "Vagrantfile": ("#", ""),
+    ".gitignore": ("#", ""),
+    ".dockerignore": ("#", ""),
+    ".editorconfig": ("#", ""),
+    ".env": ("#", ""),
+    ".env.local": ("#", ""),
+    ".env.example": ("#", ""),
+    "CMakeLists.txt": ("#", ""),
+}
+
+
+# Pattern to match lines containing only closing delimiters
+CLOSING_LINE_PATTERN = re.compile(r'^\s*(</[\w.:-]+\s*>|[}\])]+[;,]?)\s*$')
+
+# JSX-aware comment style for jsx/tsx files
+JSX_EXTENSIONS = {"jsx", "tsx"}
+JSX_COMMENT_STYLE = ("{/*", "*/}")
+
+# Pattern to detect JSX/HTML-like elements in a line
+JSX_ELEMENT_PATTERN = re.compile(
+    r'<[A-Za-z][\w.:-]*[\s/>]'
+    r'|</[A-Za-z][\w.:-]*\s*>'
+)
+
+
+def is_jsx_context(lines, line_idx):
+    """Check if the given line is inside a JSX context by examining nearby lines.
+
+    Scans the nearest non-blank lines before and after the target line
+    for JSX/HTML-like element patterns. If found, the insertion point is
+    considered to be inside JSX and requires {/* */} comments instead of //.
+    """
+    # Scan backward for up to 2 non-blank lines
+    count = 0
+    i = line_idx - 1
+    while i >= 0 and count < 2:
+        if lines[i].strip():
+            if JSX_ELEMENT_PATTERN.search(lines[i]):
+                return True
+            count += 1
+        i -= 1
+
+    # Scan forward for up to 2 non-blank lines
+    count = 0
+    i = line_idx + 1
+    while i < len(lines) and count < 2:
+        if lines[i].strip():
+            if JSX_ELEMENT_PATTERN.search(lines[i]):
+                return True
+            count += 1
+        i += 1
+
+    return False
+
+
+def get_effective_comment_style(comment_style, file_path, lines, line_idx):
+    """Get the effective comment style, considering JSX context for jsx/tsx files.
+
+    For jsx/tsx files, if the insertion point is inside JSX (surrounded by
+    HTML-like elements), returns {/* */} style instead of //.
+    """
+    _, ext = os.path.splitext(file_path)
+    ext = ext.lstrip(".").lower()
+    if ext in JSX_EXTENSIONS and is_jsx_context(lines, line_idx):
+        return JSX_COMMENT_STYLE
+    return comment_style
+
+
+def count_delimiter_balance(text):
+    """Count net balance of opening vs closing delimiters.
+    Returns positive number if there are unclosed openers."""
+    balance = 0
+    balance += text.count('{') - text.count('}')
+    balance += text.count('(') - text.count(')')
+    balance += text.count('[') - text.count(']')
+    # HTML/JSX tags (simplified)
+    opens = len(re.findall(r'<(?![/!])[\w]', text))
+    closes = len(re.findall(r'</', text))
+    self_closes = len(re.findall(r'/>', text))
+    balance += opens - closes - self_closes
+    return balance
+
+
+def extend_range_for_balance(content, text, start_pos, end_pos):
+    """Extend range for balanced delimiter structure.
+
+    Handles two cases:
+    1. Surrounding delimiter pairs: if line before range is opening-only and
+       line after is closing-only, extend both directions.
+    2. Unclosed openers within range: extend end to include closing lines.
+
+    Args:
+        content: full file content
+        text: the text being wrapped (unused, recomputed from positions)
+        start_pos: start position of text in content
+        end_pos: end position of text in content (exclusive)
+
+    Returns:
+        (extended_text, new_start_pos, new_end_pos)
+    """
+    # Step 1: Paired extension for surrounding delimiter pairs
+    while True:
+        # Find the line before start_pos
+        if start_pos <= 0:
+            break
+        prev_line_end = start_pos - 1
+        if prev_line_end < 0 or content[prev_line_end] != '\n':
+            break
+        prev_line_start = content.rfind('\n', 0, prev_line_end)
+        prev_line_start = prev_line_start + 1 if prev_line_start != -1 else 0
+        prev_line = content[prev_line_start:prev_line_end]
+
+        # Find the line after end_pos
+        if end_pos >= len(content):
+            break
+        next_line_start = end_pos
+        if content[next_line_start:next_line_start + 1] == '\n':
+            next_line_start += 1
+        next_line_end = content.find('\n', next_line_start)
+        if next_line_end == -1:
+            next_line_end = len(content)
+        next_line = content[next_line_start:next_line_end]
+
+        if count_delimiter_balance(prev_line) > 0 and count_delimiter_balance(next_line) < 0:
+            start_pos = prev_line_start
+            end_pos = next_line_end
+        else:
+            break
+
+    # Step 2: Extend end for remaining unclosed openers
+    extended_text = content[start_pos:end_pos]
+    balance = count_delimiter_balance(extended_text)
+
+    pos = end_pos
+    while balance > 0 and pos < len(content):
+        if content[pos:pos + 1] == '\n':
+            pos += 1
+        line_end = content.find('\n', pos)
+        if line_end == -1:
+            line_end = len(content)
+        line = content[pos:line_end]
+        if CLOSING_LINE_PATTERN.match(line):
+            balance += count_delimiter_balance(line)
+            end_pos = line_end
+            pos = line_end
+        else:
+            break
+
+    extended_text = content[start_pos:end_pos]
+    return extended_text, start_pos, end_pos
+
+
+def get_git_user_name():
+    """Get git user name from git config."""
+    try:
+        result = subprocess.run(
+            ["git", "config", "user.name"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        name = result.stdout.strip()
+        return name if name else "unknown"
+    except Exception:
+        return "unknown"
+
+
+def get_comment_style(file_path):
+    """Determine comment style based on file extension or filename."""
+    basename = os.path.basename(file_path)
+
+    # Check special filenames first
+    if basename in SPECIAL_FILENAMES:
+        return SPECIAL_FILENAMES[basename]
+
+    # Get extension (lowercase, without dot)
+    _, ext = os.path.splitext(basename)
+    ext = ext.lstrip(".").lower()
+
+    if not ext:
+        return None
+
+    return COMMENT_STYLES.get(ext)
+
+
+def build_marker(comment_style, git_user, timestamp, is_end=False):
+    """Build a marker comment string."""
+    prefix, suffix = comment_style
+    slash = "/" if is_end else ""
+    marker_body = f"[{git_user}] generated by AI Agent ({timestamp})"
+
+    if suffix:
+        return f"{prefix} {slash}{marker_body} {suffix}"
+    else:
+        return f"{prefix} {slash}{marker_body}"
+
+
+def get_changed_ranges(file_path):
+    """Use git diff to find changed line ranges in the file.
+
+    Returns a list of (start_line, end_line) tuples (1-indexed, inclusive).
+    Returns None if git diff is unavailable or the file is untracked (new file).
+    """
+    try:
+        # Check if the file is tracked by git
+        result = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", file_path],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            # Untracked (new) file — mark the entire file
+            debug_log(f"File is untracked: {file_path}")
+            return None
+
+        # Get unified diff of unstaged changes (the Write tool just wrote the file)
+        result = subprocess.run(
+            ["git", "diff", "--unified=0", "--no-color", file_path],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            debug_log(f"No git diff output for {file_path}")
+            return None
+
+        ranges = []
+        for line in result.stdout.splitlines():
+            # Parse @@ -old,count +new,count @@ hunk headers
+            if line.startswith("@@"):
+                # Extract the +new,count part
+                match = re.search(r"\+(\d+)(?:,(\d+))?", line)
+                if match:
+                    start = int(match.group(1))
+                    count = int(match.group(2)) if match.group(2) else 1
+                    if count > 0:
+                        ranges.append((start, start + count - 1))
+
+        return ranges if ranges else None
+
+    except Exception as e:
+        debug_log(f"git diff failed for {file_path}: {e}")
+        return None
+
+
+def handle_write(tool_input, comment_style, git_user, timestamp):
+    """Handle Write tool: wrap only changed portions with markers using git diff."""
+    file_path = tool_input.get("file_path", "")
+    if not file_path or not os.path.isfile(file_path):
+        debug_log(f"File not found: {file_path}")
+        return
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception as e:
+        debug_log(f"Failed to read file {file_path}: {e}")
+        return
+
+    start_marker = build_marker(comment_style, git_user, timestamp, is_end=False)
+    end_marker = build_marker(comment_style, git_user, timestamp, is_end=True)
+
+    # Try to detect changed ranges via git diff
+    changed_ranges = get_changed_ranges(file_path)
+
+    if changed_ranges is None:
+        # New file or git unavailable — wrap entire file
+        lines = content.split("\n")
+        shebang = ""
+
+        if lines and lines[0].startswith("#!"):
+            shebang = lines[0] + "\n"
+            lines = lines[1:]
+
+        body = "\n".join(lines)
+        new_content = f"{shebang}{start_marker}\n{body}\n{end_marker}\n"
+    else:
+        # Merge adjacent/overlapping ranges to avoid excessive markers
+        merged = []
+        for start, end in sorted(changed_ranges):
+            if merged and start <= merged[-1][1] + 2:
+                # Merge ranges that are adjacent or within 1 line of each other
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            else:
+                merged.append((start, end))
+
+        lines = content.split("\n")
+        # Insert markers around changed ranges (process in reverse to preserve line numbers)
+        for start, end in reversed(merged):
+            # Step 1: Extend range to include surrounding delimiter pairs
+            while start > 1 and end < len(lines):
+                prev_line = lines[start - 2]
+                next_line = lines[end]
+                if count_delimiter_balance(prev_line) > 0 and count_delimiter_balance(next_line) < 0:
+                    start -= 1
+                    end += 1
+                else:
+                    break
+
+            # Step 2: Extend end for remaining unclosed openers
+            range_text = '\n'.join(lines[start - 1:end])
+            balance = count_delimiter_balance(range_text)
+            while balance > 0 and end < len(lines):
+                next_line = lines[end]
+                if CLOSING_LINE_PATTERN.match(next_line):
+                    balance += count_delimiter_balance(next_line)
+                    end += 1
+                else:
+                    break
+
+            # Determine indentation from first line of (possibly extended) range
+            first_line = lines[start - 1] if start - 1 < len(lines) else ""
+            indent = first_line[: len(first_line) - len(first_line.lstrip())]
+
+            # For JSX/TSX files, check if insertion point is in JSX context
+            effective_style = get_effective_comment_style(
+                comment_style, file_path, lines, start - 1
+            )
+            sm = build_marker(effective_style, git_user, timestamp, is_end=False)
+            em = build_marker(effective_style, git_user, timestamp, is_end=True)
+
+            # Insert end marker after the last line
+            if end < len(lines):
+                lines.insert(end, f"{indent}{em}")
+            else:
+                lines.append(f"{indent}{em}")
+
+            # Insert start marker before the first line
+            lines.insert(start - 1, f"{indent}{sm}")
+
+        new_content = "\n".join(lines)
+
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        debug_log(f"Write marker applied to {file_path}")
+    except Exception as e:
+        debug_log(f"Failed to write file {file_path}: {e}")
+
+
+def handle_edit(tool_input, comment_style, git_user, timestamp):
+    """Handle Edit tool: find new_string in file and wrap it with markers."""
+    file_path = tool_input.get("file_path", "")
+    new_string = tool_input.get("new_string", "")
+    replace_all = tool_input.get("replace_all", False)
+
+    if not file_path or not os.path.isfile(file_path):
+        debug_log(f"File not found: {file_path}")
+        return
+
+    if not new_string:
+        debug_log("No new_string provided in Edit tool input")
+        return
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception as e:
+        debug_log(f"Failed to read file {file_path}: {e}")
+        return
+
+    # Pre-compute lines for JSX context detection (from original content)
+    original_lines = content.split('\n')
+
+    if replace_all:
+        # Wrap all occurrences (process in reverse to preserve positions)
+        positions = []
+        search_start = 0
+        while True:
+            idx = content.find(new_string, search_start)
+            if idx == -1:
+                break
+            positions.append(idx)
+            search_start = idx + len(new_string)
+
+        if not positions:
+            debug_log(f"new_string not found in {file_path}")
+            return
+
+        # Process in reverse order to preserve earlier positions
+        for idx in reversed(positions):
+            # Extend to include surrounding/closing delimiters for balanced structure
+            text_to_wrap, wrap_start, wrap_end = extend_range_for_balance(
+                content, new_string, idx, idx + len(new_string)
+            )
+
+            # Compute indent from first line of (possibly extended) range
+            line_start = content.rfind("\n", 0, wrap_start)
+            if line_start == -1:
+                indent = ""
+            else:
+                first_line_end = content.find('\n', wrap_start)
+                first_line = content[wrap_start:first_line_end] if first_line_end != -1 else content[wrap_start:]
+                indent = first_line[: len(first_line) - len(first_line.lstrip())]
+
+            # Determine effective comment style (JSX context detection)
+            wrap_line_idx = content[:wrap_start].count('\n')
+            effective_style = get_effective_comment_style(
+                comment_style, file_path, original_lines, wrap_line_idx
+            )
+            sm = build_marker(effective_style, git_user, timestamp, is_end=False)
+            em = build_marker(effective_style, git_user, timestamp, is_end=True)
+
+            wrapped = f"{indent}{sm}\n{text_to_wrap}\n{indent}{em}"
+            content = content[:wrap_start] + wrapped + content[wrap_end:]
+
+        new_content = content
+    else:
+        # Wrap only the first occurrence
+        idx = content.find(new_string)
+        if idx == -1:
+            debug_log(f"new_string not found in {file_path}")
+            return
+
+        # Extend to include surrounding/closing delimiters for balanced structure
+        text_to_wrap, wrap_start, wrap_end = extend_range_for_balance(
+            content, new_string, idx, idx + len(new_string)
+        )
+
+        # Compute indent from first line of (possibly extended) range
+        line_start = content.rfind("\n", 0, wrap_start)
+        if line_start == -1:
+            indent = ""
+        else:
+            first_line_end = content.find('\n', wrap_start)
+            first_line = content[wrap_start:first_line_end] if first_line_end != -1 else content[wrap_start:]
+            indent = first_line[: len(first_line) - len(first_line.lstrip())]
+
+        # Determine effective comment style (JSX context detection)
+        wrap_line_idx = content[:wrap_start].count('\n')
+        effective_style = get_effective_comment_style(
+            comment_style, file_path, original_lines, wrap_line_idx
+        )
+        sm = build_marker(effective_style, git_user, timestamp, is_end=False)
+        em = build_marker(effective_style, git_user, timestamp, is_end=True)
+
+        wrapped = f"{indent}{sm}\n{text_to_wrap}\n{indent}{em}"
+        new_content = content[:wrap_start] + wrapped + content[wrap_end:]
+
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        debug_log(f"Edit marker applied to {file_path}")
+    except Exception as e:
+        debug_log(f"Failed to write file {file_path}: {e}")
+
+
+def main():
+    """Main hook function."""
+    # Check if marker is enabled via env var
+    if os.environ.get("DISABLE_AI_CODE_MARKER", "0") == "1":
+        sys.exit(0)
+
+    # Read input from stdin
+    try:
+        raw_input = sys.stdin.read()
+        input_data = json.loads(raw_input)
+    except json.JSONDecodeError as e:
+        debug_log(f"JSON decode error: {e}")
+        sys.exit(0)
+
+    tool_name = input_data.get("tool_name", "")
+    tool_input = input_data.get("tool_input", {})
+
+    if tool_name not in ("Write", "Edit"):
+        sys.exit(0)
+
+    file_path = tool_input.get("file_path", "")
+    if not file_path:
+        sys.exit(0)
+
+    # Determine comment style
+    comment_style = get_comment_style(file_path)
+    if comment_style is None:
+        debug_log(f"Unsupported file extension, skipping: {file_path}")
+        sys.exit(0)
+
+    git_user = get_git_user_name()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if tool_name == "Write":
+        handle_write(tool_input, comment_style, git_user, timestamp)
+    elif tool_name == "Edit":
+        handle_edit(tool_input, comment_style, git_user, timestamp)
+
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,19 @@
+{
+  "plugins": [
+    ".claude/plugins/skills/code-review-agents",
+    ".claude/plugins/skills/ai-code-marker"
+  ],
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/plugins/skills/ai-code-marker/hooks/ai_code_marker_hook.py"
+          }
+        ]
+      }
+    ]
+  }
+}
