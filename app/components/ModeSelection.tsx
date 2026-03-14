@@ -11,6 +11,15 @@ interface ModeSelectionProps {
 
 type Step = "mode" | "host" | "guest";
 
+function isValidWsUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "ws:" || parsed.protocol === "wss:";
+  } catch {
+    return false;
+  }
+}
+
 export default function ModeSelection({ onSelect }: ModeSelectionProps) {
   const [step, setStep] = useState<Step>("mode");
   const [playerName, setPlayerName] = useState("");
@@ -114,7 +123,7 @@ export default function ModeSelection({ onSelect }: ModeSelectionProps) {
         <div>
           <label className="text-gray-400 text-sm block mb-1">Password</label>
           <input
-            type="text"
+            type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Enter password"
@@ -123,7 +132,7 @@ export default function ModeSelection({ onSelect }: ModeSelectionProps) {
         </div>
         <button
           onClick={() => {
-            if (!playerName.trim() || !endpoint.trim() || !password.trim())
+            if (!playerName.trim() || !isValidWsUrl(endpoint.trim()) || !password.trim())
               return;
             onSelect({
               mode: "multiplayer",
@@ -134,7 +143,7 @@ export default function ModeSelection({ onSelect }: ModeSelectionProps) {
             });
           }}
           disabled={
-            !playerName.trim() || !endpoint.trim() || !password.trim()
+            !playerName.trim() || !isValidWsUrl(endpoint.trim()) || !password.trim()
           }
           className="bg-amber-600 hover:bg-amber-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded transition-colors cursor-pointer"
         >
