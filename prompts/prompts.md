@@ -61,3 +61,15 @@ UI의 배치는
 원인을 파악해 주세요.
 ```
 > 수정해주세요.
+
+# turn 10
+```text
+게임을 진행하다보면 갑자기 첫 화면으로 돌아가는 경우가 있습니다.
+
+관련된 정보로는 멀티플레이 지원을 위해 커스텀 서버가 존재하며,
+브라우저에서 아래의 콘솔 오류가 발생하고 있습니다.
+(일정 횟수가 누적된 후, 페이지가 갱신되는 것으로 보입니다.)
+
+web-socket.ts:50 WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=qncEL5D1JQRv9mEUgG53Y' failed: 
+init	@	web-socket.ts:50
+```
