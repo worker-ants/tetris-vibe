@@ -73,3 +73,8 @@ UI의 배치는
 web-socket.ts:50 WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=qncEL5D1JQRv9mEUgG53Y' failed: 
 init	@	web-socket.ts:50
 ```
+
+# turn 11
+```text
+"2026-03-15_00-23-55" 리뷰에서 제안된 조치사항 중에서 "ws:// 평문 전송"외의 모든 항목을 처리해 주세요.
+```
