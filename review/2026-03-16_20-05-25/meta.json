@@ -1,0 +1,243 @@
+{
+  "timestamp": "2026-03-16T20:09:22.747333",
+  "files": [
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/layout.tsx",
+      "change_type": "Review",
+      "file_extension": "tsx"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/page.tsx",
+      "change_type": "Review",
+      "file_extension": "tsx"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/globals.css",
+      "change_type": "Review",
+      "file_extension": "css"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/components/GameApp.tsx",
+      "change_type": "Review",
+      "file_extension": "tsx"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/components/NextPiece.tsx",
+      "change_type": "Review",
+      "file_extension": "tsx"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/components/GameOverOverlay.tsx",
+      "change_type": "Review",
+      "file_extension": "tsx"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/components/GameBoard.tsx",
+      "change_type": "Review",
+      "file_extension": "tsx"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/components/MultiplayerGame.tsx",
+      "change_type": "Review",
+      "file_extension": "tsx"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/components/ControlsInfo.tsx",
+      "change_type": "Review",
+      "file_extension": "tsx"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/components/ModeSelection.tsx",
+      "change_type": "Review",
+      "file_extension": "tsx"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/components/TetrisGame.tsx",
+      "change_type": "Review",
+      "file_extension": "tsx"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/components/RoundResult.tsx",
+      "change_type": "Review",
+      "file_extension": "tsx"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/components/OpponentBoard.tsx",
+      "change_type": "Review",
+      "file_extension": "tsx"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/components/ScorePanel.tsx",
+      "change_type": "Review",
+      "file_extension": "tsx"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/hooks/useMultiplayer.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/app/hooks/__tests__/useMultiplayer.test.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/tetris/gameEngine.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/tetris/rotation.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/tetris/types.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/tetris/collision.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/tetris/reducer.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/tetris/constants.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/tetris/scoring.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/tetris/tetrominoes.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/tetris/board.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/tetris/__tests__/gameEngine.test.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/multiplayer/validation.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/multiplayer/broadcast.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/multiplayer/types.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/multiplayer/ranking.mjs",
+      "change_type": "Review",
+      "file_extension": "mjs"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/multiplayer/sanitize.mjs",
+      "change_type": "Review",
+      "file_extension": "mjs"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/multiplayer/__tests__/broadcast.test.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/lib/multiplayer/__tests__/validation.test.ts",
+      "change_type": "Review",
+      "file_extension": "ts"
+    },
+    {
+      "file_path": "/Volumes/project/private/tetris-vibe/server.mjs",
+      "change_type": "Review",
+      "file_extension": "mjs"
+    }
+  ],
+  "total_elapsed_seconds": 237.26,
+  "agents": [
+    {
+      "name": "database",
+      "status": "success",
+      "elapsed_seconds": 10.3
+    },
+    {
+      "name": "documentation",
+      "status": "success",
+      "elapsed_seconds": 38.66
+    },
+    {
+      "name": "performance",
+      "status": "success",
+      "elapsed_seconds": 40.2
+    },
+    {
+      "name": "maintainability",
+      "status": "success",
+      "elapsed_seconds": 46.25
+    },
+    {
+      "name": "dependency",
+      "status": "success",
+      "elapsed_seconds": 50.17
+    },
+    {
+      "name": "testing",
+      "status": "success",
+      "elapsed_seconds": 56.65
+    },
+    {
+      "name": "api_contract",
+      "status": "success",
+      "elapsed_seconds": 63.62
+    },
+    {
+      "name": "scope",
+      "status": "success",
+      "elapsed_seconds": 64.45
+    },
+    {
+      "name": "architecture",
+      "status": "success",
+      "elapsed_seconds": 66.48
+    },
+    {
+      "name": "security",
+      "status": "success",
+      "elapsed_seconds": 78.0
+    },
+    {
+      "name": "concurrency",
+      "status": "success",
+      "elapsed_seconds": 86.85
+    },
+    {
+      "name": "side_effect",
+      "status": "success",
+      "elapsed_seconds": 94.86
+    },
+    {
+      "name": "requirement",
+      "status": "success",
+      "elapsed_seconds": 95.39
+    }
+  ]
+}

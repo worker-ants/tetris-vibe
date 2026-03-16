@@ -83,3 +83,8 @@ init	@	web-socket.ts:50
 ```text
 lint 오류를 확인하고 수정해 주세요.
 ```
+
+# turn 14
+```text
+코드베이스 전체를 리뷰해 주세요.
+```
