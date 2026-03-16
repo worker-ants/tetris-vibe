@@ -17,6 +17,28 @@ from pathlib import Path
 
 DEBUG_LOG_FILE = "/tmp/code-review-agents-log.txt"
 
+# Binary file extensions to skip by default
+BINARY_EXTENSIONS = {
+    # Images
+    "png", "jpg", "jpeg", "gif", "bmp", "ico", "svg", "webp", "tiff", "tif",
+    "psd", "ai", "eps", "raw", "cr2", "nef", "heic", "heif", "avif",
+    # Compiled / Archives
+    "jar", "war", "ear", "class", "pyc", "pyo", "o", "obj", "so", "dylib",
+    "dll", "exe", "bin", "a", "lib", "ko",
+    "zip", "tar", "gz", "bz2", "xz", "7z", "rar", "zst",
+    # Fonts
+    "woff", "woff2", "ttf", "otf", "eot",
+    # Media
+    "mp3", "mp4", "avi", "mov", "wmv", "flv", "mkv", "webm",
+    "wav", "flac", "aac", "ogg", "m4a",
+    # Documents (binary)
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    # Data / DB
+    "sqlite", "db", "sqlite3",
+    # Other
+    "wasm", "map",
+}
+
 ALL_AGENTS = [
     "security",
     "performance",
@@ -44,6 +66,31 @@ def debug_log(message):
         pass
 
 
+def is_binary_file(file_path):
+    """Check if a file is binary by reading its first 8KB for null bytes."""
+    try:
+        with open(file_path, "rb") as f:
+            chunk = f.read(8192)
+        return b"\x00" in chunk
+    except Exception:
+        return False
+
+
+def is_binary_ext(file_path):
+    """Check if a file has a known binary extension."""
+    _, ext = os.path.splitext(file_path)
+    return ext.lstrip(".").lower() in BINARY_EXTENSIONS
+
+
+def should_skip_binary(file_path):
+    """Return True if the file should be skipped as a binary file."""
+    if is_binary_ext(file_path):
+        return True
+    if os.path.isfile(file_path) and is_binary_file(file_path):
+        return True
+    return False
+
+
 def load_config():
     """Load configuration from environment variables."""
     agents_env = os.environ.get("REVIEW_AGENTS", "")
@@ -60,7 +107,7 @@ def load_config():
 
     return {
         "model": os.environ.get("REVIEW_MODEL", "sonnet"),
-        "timeout": int(os.environ.get("REVIEW_TIMEOUT", "120")),
+        "timeout": int(os.environ.get("REVIEW_TIMEOUT", "3600")),
         "output_dir": os.environ.get("REVIEW_OUTPUT_DIR", "./review"),
         "agents": agents,
         "max_file_size": int(os.environ.get("REVIEW_MAX_FILE_SIZE", "51200")),
@@ -169,7 +216,7 @@ def build_agent_prompt(agent_name, change_infos, prompt_dir, max_file_size):
 
 
 def run_single_agent(agent_name, prompt, model, output_dir, timeout):
-    """Run a single review agent via claude -p and save output."""
+    """Run a single review agent via claude -p (stdin) and save output."""
     start_time = time.time()
     agent_dir = os.path.join(output_dir, agent_name)
     os.makedirs(agent_dir, exist_ok=True)
@@ -177,7 +224,8 @@ def run_single_agent(agent_name, prompt, model, output_dir, timeout):
 
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt, "--model", model],
+            ["claude", "-p", "--model", model],
+            input=prompt,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -305,7 +353,8 @@ def run_summary_agent(results, session_dir, config, change_infos):
 
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt, "--model", config["model"]],
+            ["claude", "-p", "--model", config["model"]],
+            input=prompt,
             capture_output=True,
             text=True,
             timeout=config["timeout"],
@@ -534,14 +583,18 @@ def get_file_at_commit(commit_hash, file_path):
 
 
 def get_directory_files(dir_path):
-    """Get all reviewable files under a directory (excluding hidden files/dirs)."""
+    """Get all reviewable files under a directory (excluding hidden and binary files)."""
     files = []
     for root, dirs, filenames in os.walk(dir_path):
         # Skip hidden directories
         dirs[:] = [d for d in dirs if not d.startswith(".")]
         for fname in filenames:
-            if not fname.startswith("."):
-                files.append(os.path.join(root, fname))
+            if fname.startswith("."):
+                continue
+            full_path = os.path.join(root, fname)
+            if should_skip_binary(full_path):
+                continue
+            files.append(full_path)
     return files
 
 
@@ -685,7 +738,7 @@ def main_cli(args):
         if args.staged:
             print("Reviewing staged changes...")
 
-    # Filter by skip extensions and validate existence
+    # Filter by skip extensions, binary files, and validate existence
     filtered_files = []
     for f in files:
         _, ext = os.path.splitext(f)
@@ -693,10 +746,16 @@ def main_cli(args):
         if ext_clean and ext_clean in config["skip_extensions"]:
             debug_log(f"Skipping review for extension: {ext_clean}")
             continue
+        if is_binary_ext(f):
+            debug_log(f"Skipping binary file (extension): {f}")
+            continue
         # For commit/range/branch mode, file may not exist on disk
         if not args.commit and not args.range and not args.branch:
             if not os.path.isfile(f):
                 debug_log(f"File not found, skipping: {f}")
+                continue
+            if is_binary_file(f):
+                debug_log(f"Skipping binary file (content): {f}")
                 continue
         filtered_files.append(f)
 
@@ -749,13 +808,16 @@ def main_hook():
         # Load config
         config = load_config()
 
-        # Check skip extensions
+        # Check skip extensions and binary files
         file_path = input_data.get("tool_input", {}).get("file_path", "")
         if file_path:
             _, ext = os.path.splitext(file_path)
             ext_clean = ext.lstrip(".").lower()
             if ext_clean and ext_clean in config["skip_extensions"]:
                 debug_log(f"Skipping review for extension: {ext_clean}")
+                sys.exit(0)
+            if should_skip_binary(file_path):
+                debug_log(f"Skipping binary file: {file_path}")
                 sys.exit(0)
 
         # Extract change info

@@ -176,15 +176,19 @@ python3 /path/to/skills/code-review-agents/hooks/code_review_orchestrator.py --c
 
 환경변수를 통해 동작을 커스터마이징할 수 있습니다:
 
-| 환경변수 | 기본값 | 설명 |
-|----------|--------|------|
-| `REVIEW_MODEL` | `sonnet` | Claude 모델 (`sonnet`, `opus`, `haiku`) |
-| `REVIEW_TIMEOUT` | `120` | 에이전트별 타임아웃(초) |
+| 환경변수 | 기본값        | 설명 |
+|----------|------------|------|
+| `REVIEW_MODEL` | `sonnet`   | Claude 모델 (`sonnet`, `opus`, `haiku`) |
+| `REVIEW_TIMEOUT` | `3600`     | 에이전트별 타임아웃(초) |
 | `REVIEW_OUTPUT_DIR` | `./review` | 리뷰 출력 디렉토리 |
-| `DISABLE_CODE_REVIEW` | `0` | `1`로 설정 시 비활성화 |
-| `REVIEW_AGENTS` | (전체 13개) | 실행할 에이전트 쉼표 구분 목록 |
-| `REVIEW_MAX_FILE_SIZE` | `51200` | 파일 내용 최대 크기(bytes), 초과 시 잘라냄 |
-| `REVIEW_SKIP_EXTENSIONS` | (없음) | 건너뛸 확장자 쉼표 구분 (예: `md,txt,json`) |
+| `DISABLE_CODE_REVIEW` | `0`        | `1`로 설정 시 비활성화 |
+| `REVIEW_AGENTS` | (전체 13개)   | 실행할 에이전트 쉼표 구분 목록 |
+| `REVIEW_MAX_FILE_SIZE` | `51200`    | 파일 내용 최대 크기(bytes), 초과 시 잘라냄 |
+| `REVIEW_SKIP_EXTENSIONS` | (없음)       | 건너뛸 확장자 쉼표 구분 (예: `md,txt,json`) |
+
+### 바이너리 파일 자동 제외
+
+이미지(`png`, `jpg`, `gif` 등), 컴파일된 파일(`jar`, `class`, `pyc`, `o` 등), 압축 파일(`zip`, `tar.gz` 등), 폰트, 미디어 파일 등 바이너리 파일은 자동으로 리뷰 대상에서 제외됩니다. 알려진 바이너리 확장자 목록에 없는 파일도 파일 내용에 null 바이트가 포함되어 있으면 바이너리로 판별하여 제외합니다.
 
 ### 사용 예시
 
