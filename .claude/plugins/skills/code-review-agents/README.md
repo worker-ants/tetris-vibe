@@ -186,11 +186,16 @@ python3 /path/to/skills/code-review-agents/hooks/code_review_orchestrator.py --c
 | `REVIEW_MAX_FILE_SIZE` | `51200`    | 개별 파일 내용 최대 크기(bytes), 초과 시 잘라냄 |
 | `REVIEW_MAX_PROMPT_SIZE` | `131072`   | 에이전트 프롬프트 최대 크기(bytes, 128KB). 파일이 많거나 클 때 프롬프트 초과 방지 |
 | `REVIEW_MAX_SUMMARY_SIZE` | `131072`   | 요약 프롬프트 최대 크기(bytes, 128KB). 에이전트 출력 합산 초과 방지 |
+| `REVIEW_BATCH_SIZE` | `50`        | 배치당 최대 파일 수. 파일이 많으면 자동으로 여러 배치로 나눠 순차 처리 |
 | `REVIEW_SKIP_EXTENSIONS` | (없음)       | 건너뛸 확장자 쉼표 구분 (예: `md,txt,json`) |
 
 ### 바이너리 파일 자동 제외
 
 이미지(`png`, `jpg`, `gif` 등), 컴파일된 파일(`jar`, `class`, `pyc`, `o` 등), 압축 파일(`zip`, `tar.gz` 등), 폰트, 미디어 파일 등 바이너리 파일은 자동으로 리뷰 대상에서 제외됩니다. 알려진 바이너리 확장자 목록에 없는 파일도 파일 내용에 null 바이트가 포함되어 있으면 바이너리로 판별하여 제외합니다.
+
+### .gitignore 자동 적용
+
+디렉토리 경로(`./` 등)를 대상으로 리뷰할 때, git 저장소 내에서는 `git ls-files`를 사용하여 `.gitignore`에 지정된 파일(`node_modules`, `dist`, `build` 등)을 자동으로 제외합니다. git 저장소가 아닌 경우에는 숨김 디렉토리와 바이너리 파일만 제외됩니다.
 
 ### 사용 예시
 

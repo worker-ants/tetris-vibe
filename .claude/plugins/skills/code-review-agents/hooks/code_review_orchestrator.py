@@ -113,6 +113,7 @@ def load_config():
         "max_file_size": int(os.environ.get("REVIEW_MAX_FILE_SIZE", "51200")),
         "max_prompt_size": int(os.environ.get("REVIEW_MAX_PROMPT_SIZE", "131072")),
         "max_summary_size": int(os.environ.get("REVIEW_MAX_SUMMARY_SIZE", "131072")),
+        "batch_size": int(os.environ.get("REVIEW_BATCH_SIZE", "50")),
         "skip_extensions": skip_extensions,
     }
 
@@ -225,7 +226,7 @@ def build_files_section(change_infos, max_file_size, max_total_size=0):
     base_size = len(separator.join(base_sections))
 
     if base_size >= max_total_size:
-        # Even headers+diffs exceed budget — truncate large diffs
+        # Even headers+diffs exceed budget — first truncate large diffs
         debug_log(f"build_files_section: base_size={base_size} exceeds budget={max_total_size}, truncating diffs")
         # Sort by diff size descending so we truncate largest first
         indexed = [(i, fp) for i, fp in enumerate(file_parts)]
@@ -725,7 +726,36 @@ def get_file_at_commit(commit_hash, file_path):
 
 
 def get_directory_files(dir_path):
-    """Get all reviewable files under a directory (excluding hidden and binary files)."""
+    """Get all reviewable files under a directory.
+
+    Uses 'git ls-files' when inside a git repository to respect .gitignore,
+    falls back to os.walk (excluding hidden dirs and binary files) otherwise.
+    """
+    dir_path = os.path.abspath(dir_path)
+
+    # Try git ls-files first (respects .gitignore automatically)
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+            capture_output=True, text=True, timeout=30, cwd=dir_path,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            files = []
+            for line in result.stdout.strip().split("\n"):
+                if not line:
+                    continue
+                full_path = os.path.join(dir_path, line)
+                if not os.path.isfile(full_path):
+                    continue
+                if should_skip_binary(full_path):
+                    continue
+                files.append(full_path)
+            debug_log(f"get_directory_files: git ls-files returned {len(files)} files for {dir_path}")
+            return files
+    except Exception as e:
+        debug_log(f"git ls-files failed, falling back to os.walk: {e}")
+
+    # Fallback: os.walk (for non-git directories)
     files = []
     for root, dirs, filenames in os.walk(dir_path):
         # Skip hidden directories
@@ -906,21 +936,45 @@ def main_cli(args):
         sys.exit(0)
 
     # Build change_infos for ALL files first
-    print(f"Reviewing {len(filtered_files)} file(s)...")
-    change_infos = []
+    print(f"Collecting {len(filtered_files)} file(s)...")
+    all_change_infos = []
     for file_path in filtered_files:
-        print(f"  - {file_path}")
         diff = diff_getter(file_path) if diff_getter else None
         content = content_getter(file_path) if content_getter else None
-        change_infos.append(
+        all_change_infos.append(
             build_cli_change_info(file_path, diff_content=diff, file_content=content)
         )
 
-    # Run single session for all files
-    session_dir = run_review_session(change_infos, config)
+    # Split into batches and run each as a separate session
+    batch_size = config["batch_size"]
+    batches = [
+        all_change_infos[i:i + batch_size]
+        for i in range(0, len(all_change_infos), batch_size)
+    ]
+    total_batches = len(batches)
 
-    print(f"\nReview complete. Results:")
-    print(f"  {session_dir}/SUMMARY.md")
+    if total_batches == 1:
+        print(f"Reviewing {len(all_change_infos)} file(s)...")
+        for ci in all_change_infos:
+            print(f"  - {ci['file_path']}")
+        session_dir = run_review_session(all_change_infos, config)
+        print(f"\nReview complete. Results:")
+        print(f"  {session_dir}/SUMMARY.md")
+    else:
+        print(f"Reviewing {len(all_change_infos)} file(s) in {total_batches} batches (batch size: {batch_size})...")
+        session_dirs = []
+        for batch_idx, batch in enumerate(batches, 1):
+            print(f"\n--- Batch {batch_idx}/{total_batches} ({len(batch)} files) ---")
+            for ci in batch:
+                print(f"  - {ci['file_path']}")
+            session_dir = run_review_session(batch, config)
+            session_dirs.append(session_dir)
+            print(f"  → {session_dir}/SUMMARY.md")
+
+        print(f"\nReview complete. {total_batches} batches processed.")
+        print(f"Results:")
+        for i, sd in enumerate(session_dirs, 1):
+            print(f"  Batch {i}: {sd}/SUMMARY.md")
 
 
 # ---------------------------------------------------------------------------
