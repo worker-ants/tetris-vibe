@@ -111,6 +111,8 @@ def load_config():
         "output_dir": os.environ.get("REVIEW_OUTPUT_DIR", "./review"),
         "agents": agents,
         "max_file_size": int(os.environ.get("REVIEW_MAX_FILE_SIZE", "51200")),
+        "max_prompt_size": int(os.environ.get("REVIEW_MAX_PROMPT_SIZE", "131072")),
+        "max_summary_size": int(os.environ.get("REVIEW_MAX_SUMMARY_SIZE", "131072")),
         "skip_extensions": skip_extensions,
     }
 
@@ -164,10 +166,34 @@ def extract_change_info(input_data):
 # ---------------------------------------------------------------------------
 
 
-def build_files_section(change_infos, max_file_size):
-    """Build the {files_section} content for agent prompts from multiple change_infos."""
-    sections = []
+def build_files_section(change_infos, max_file_size, max_total_size=0):
+    """Build the {files_section} content for agent prompts from multiple change_infos.
+
+    Truncation priority (preserves most important content):
+    1. File headers (path, type, language) — never truncated
+    2. Changed code / diff (code, old_code) — truncated only as last resort
+    3. Full file context (full_file_content) — truncated first, smallest files preserved first
+
+    Args:
+        change_infos: List of change_info dicts.
+        max_file_size: Max size for individual file content.
+        max_total_size: Max total size for the entire section. 0 = unlimited.
+    """
+    separator = "\n---\n\n"
+
+    # Phase 1: Build headers and diffs for each file (always included)
+    file_parts = []
     for i, ci in enumerate(change_infos, 1):
+        header = f"### 파일 {i}: {ci['file_path']}\n"
+        header += f"- 변경 유형: {ci['change_type']}\n"
+        header += f"- 언어: {ci['file_extension']}\n"
+
+        diff_section = ""
+        if ci.get("code"):
+            diff_section += f"\n#### 변경된 코드\n```\n{ci['code']}\n```\n"
+        if ci.get("old_code"):
+            diff_section += f"\n#### 이전 코드\n```\n{ci['old_code']}\n```\n"
+
         full_content = ci.get("full_file_content", "")
         if len(full_content) > max_file_size:
             full_content = (
@@ -175,26 +201,109 @@ def build_files_section(change_infos, max_file_size):
                 + "\n\n... (truncated due to size limit) ..."
             )
 
-        section = f"### 파일 {i}: {ci['file_path']}\n"
-        section += f"- 변경 유형: {ci['change_type']}\n"
-        section += f"- 언어: {ci['file_extension']}\n"
+        file_parts.append({
+            "header": header,
+            "diff": diff_section,
+            "full_content": full_content,
+            "full_content_size": len(full_content),
+        })
 
-        if ci.get("code"):
-            section += f"\n#### 변경된 코드\n```\n{ci['code']}\n```\n"
+    # If no budget limit, build sections with all content
+    if max_total_size <= 0:
+        sections = []
+        for fp in file_parts:
+            section = fp["header"] + fp["diff"]
+            if fp["full_content"]:
+                section += f"\n#### 전체 파일 컨텍스트\n```\n{fp['full_content']}\n```\n"
+            sections.append(section)
+        result = separator.join(sections)
+        debug_log(f"build_files_section: {len(file_parts)} files, total_size={len(result)}, no budget limit")
+        return result
 
-        if ci.get("old_code"):
-            section += f"\n#### 이전 코드\n```\n{ci['old_code']}\n```\n"
+    # Phase 2: Calculate base size (headers + diffs only)
+    base_sections = [fp["header"] + fp["diff"] for fp in file_parts]
+    base_size = len(separator.join(base_sections))
 
-        if full_content:
-            section += f"\n#### 전체 파일 컨텍스트\n```\n{full_content}\n```\n"
+    if base_size >= max_total_size:
+        # Even headers+diffs exceed budget — truncate large diffs
+        debug_log(f"build_files_section: base_size={base_size} exceeds budget={max_total_size}, truncating diffs")
+        # Sort by diff size descending so we truncate largest first
+        indexed = [(i, fp) for i, fp in enumerate(file_parts)]
+        indexed.sort(key=lambda x: len(x[1]["diff"]), reverse=True)
 
+        # Calculate how much we need to cut
+        overflow = base_size - max_total_size
+        for idx, fp in indexed:
+            if overflow <= 0:
+                break
+            diff_len = len(fp["diff"])
+            if diff_len == 0:
+                continue
+            # Calculate how much to keep for this diff
+            cut = min(overflow, diff_len)
+            new_len = diff_len - cut
+            if new_len > 0:
+                fp["diff"] = fp["diff"][:new_len] + "\n\n... (truncated due to prompt size limit) ...\n"
+            else:
+                fp["diff"] = "\n\n... (diff omitted due to prompt size limit) ...\n"
+            overflow -= cut
+
+        sections = [fp["header"] + fp["diff"] for fp in file_parts]
+        result = separator.join(sections)
+        debug_log(f"build_files_section: {len(file_parts)} files, total_size={len(result)}, budget={max_total_size} (diffs truncated)")
+        return result
+
+    # Phase 3: Distribute remaining budget to full_file_content (smallest files first)
+    remaining_budget = max_total_size - base_size
+    # Overhead per file for the "#### 전체 파일 컨텍스트" wrapper
+    content_wrapper_overhead = len("\n#### 전체 파일 컨텍스트\n```\n\n```\n")
+
+    # Sort indices by full_content_size ascending (preserve small files first)
+    content_indices = [
+        i for i, fp in enumerate(file_parts) if fp["full_content"]
+    ]
+    content_indices.sort(key=lambda i: file_parts[i]["full_content_size"])
+
+    include_content = {}  # index -> content string to include
+    for i in content_indices:
+        needed = file_parts[i]["full_content_size"] + content_wrapper_overhead
+        if needed <= remaining_budget:
+            include_content[i] = file_parts[i]["full_content"]
+            remaining_budget -= needed
+        else:
+            # Partial inclusion if there's enough space for at least some content
+            available = remaining_budget - content_wrapper_overhead
+            if available > 200:  # only include if meaningful amount remains
+                include_content[i] = (
+                    file_parts[i]["full_content"][:available]
+                    + "\n\n... (truncated due to prompt size limit) ..."
+                )
+                remaining_budget = 0
+            break
+
+    # Phase 4: Assemble final sections
+    sections = []
+    for i, fp in enumerate(file_parts):
+        section = fp["header"] + fp["diff"]
+        if i in include_content:
+            section += f"\n#### 전체 파일 컨텍스트\n```\n{include_content[i]}\n```\n"
         sections.append(section)
 
-    return "\n---\n\n".join(sections)
+    result = separator.join(sections)
+    omitted = len(content_indices) - len(include_content)
+    debug_log(
+        f"build_files_section: {len(file_parts)} files, total_size={len(result)}, "
+        f"budget={max_total_size}, full_content included={len(include_content)}, omitted={omitted}"
+    )
+    return result
 
 
-def build_agent_prompt(agent_name, change_infos, prompt_dir, max_file_size):
-    """Build prompt for an agent by reading template and substituting {files_section}."""
+def build_agent_prompt(agent_name, change_infos, prompt_dir, max_file_size, max_prompt_size=0):
+    """Build prompt for an agent by reading template and substituting {files_section}.
+
+    Args:
+        max_prompt_size: Max total prompt size. 0 = unlimited.
+    """
     template_path = os.path.join(prompt_dir, "agents", f"{agent_name}.md")
 
     try:
@@ -204,9 +313,16 @@ def build_agent_prompt(agent_name, change_infos, prompt_dir, max_file_size):
         debug_log(f"Failed to read template {template_path}: {e}")
         return None
 
-    files_section = build_files_section(change_infos, max_file_size)
+    # Calculate files_section budget: total budget minus template size
+    files_budget = 0
+    if max_prompt_size > 0:
+        template_size = len(template)
+        files_budget = max(max_prompt_size - template_size, max_prompt_size // 2)
+
+    files_section = build_files_section(change_infos, max_file_size, files_budget)
     prompt = template.replace("{files_section}", files_section)
 
+    debug_log(f"build_agent_prompt({agent_name}): prompt_size={len(prompt)}, budget={max_prompt_size}")
     return prompt
 
 
@@ -287,7 +403,8 @@ def run_all_agents_parallel(change_infos, config, session_dir):
         futures = {}
         for agent_name in config["agents"]:
             prompt = build_agent_prompt(
-                agent_name, change_infos, prompt_dir, config["max_file_size"],
+                agent_name, change_infos, prompt_dir,
+                config["max_file_size"], config["max_prompt_size"],
             )
             if prompt is None:
                 results.append({
@@ -342,14 +459,39 @@ def run_summary_agent(results, session_dir, config, change_infos):
     for i, ci in enumerate(change_infos, 1):
         files_info += f"- 파일 {i}: {ci['file_path']} ({ci['change_type']}, {ci['file_extension']})\n"
 
-    # Build review results section
+    # Build review results section with budget control
+    max_summary_size = config.get("max_summary_size", 0)
+
     reviews_text = ""
     for r in results:
         reviews_text += f"\n## {r['agent']} Review (status: {r['status']}, {r['elapsed']}s)\n\n"
         reviews_text += r.get("output", "No output") + "\n"
 
+    # Apply summary size budget
+    if max_summary_size > 0:
+        base_size = len(summary_template) + len(files_info)
+        reviews_budget = max(max_summary_size - base_size, max_summary_size // 2)
+
+        if len(reviews_text) > reviews_budget:
+            debug_log(
+                f"run_summary_agent: reviews_text={len(reviews_text)} exceeds budget={reviews_budget}, truncating"
+            )
+            # Distribute budget equally among agents
+            per_agent_budget = reviews_budget // max(len(results), 1)
+            truncated_parts = []
+            for r in results:
+                header = f"\n## {r['agent']} Review (status: {r['status']}, {r['elapsed']}s)\n\n"
+                output = r.get("output", "No output")
+                content_budget = per_agent_budget - len(header)
+                if content_budget > 0 and len(output) > content_budget:
+                    output = output[:content_budget] + "\n\n... (truncated due to summary size limit) ..."
+                truncated_parts.append(header + output + "\n")
+            reviews_text = "".join(truncated_parts)
+
     prompt = summary_template.replace("{files_info}", files_info)
     prompt = prompt.replace("{review_results}", reviews_text)
+
+    debug_log(f"run_summary_agent: prompt_size={len(prompt)}, budget={max_summary_size}")
 
     try:
         result = subprocess.run(

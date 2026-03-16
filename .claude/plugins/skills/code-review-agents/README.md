@@ -183,7 +183,9 @@ python3 /path/to/skills/code-review-agents/hooks/code_review_orchestrator.py --c
 | `REVIEW_OUTPUT_DIR` | `./review` | 리뷰 출력 디렉토리 |
 | `DISABLE_CODE_REVIEW` | `0`        | `1`로 설정 시 비활성화 |
 | `REVIEW_AGENTS` | (전체 13개)   | 실행할 에이전트 쉼표 구분 목록 |
-| `REVIEW_MAX_FILE_SIZE` | `51200`    | 파일 내용 최대 크기(bytes), 초과 시 잘라냄 |
+| `REVIEW_MAX_FILE_SIZE` | `51200`    | 개별 파일 내용 최대 크기(bytes), 초과 시 잘라냄 |
+| `REVIEW_MAX_PROMPT_SIZE` | `131072`   | 에이전트 프롬프트 최대 크기(bytes, 128KB). 파일이 많거나 클 때 프롬프트 초과 방지 |
+| `REVIEW_MAX_SUMMARY_SIZE` | `131072`   | 요약 프롬프트 최대 크기(bytes, 128KB). 에이전트 출력 합산 초과 방지 |
 | `REVIEW_SKIP_EXTENSIONS` | (없음)       | 건너뛸 확장자 쉼표 구분 (예: `md,txt,json`) |
 
 ### 바이너리 파일 자동 제외
